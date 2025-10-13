@@ -1,0 +1,22 @@
+{
+  "name": "sizzle",
+  "version": "1.0.0",
+  "description": "a server for a videogame",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Speedy-productions/Server.git"
+  },
+  "author": "yo",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Speedy-productions/Server/issues"
+  },
+  "homepage": "https://github.com/Speedy-productions/Server#readme",
+  "dependencies": {
+    "express": "^5.1.0"
+  }
+}
