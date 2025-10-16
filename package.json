@@ -17,6 +17,7 @@
   },
   "homepage": "https://github.com/Speedy-productions/Server#readme",
   "dependencies": {
-    "express": "^5.1.0"
+    "express": "^5.1.0",
+    "sqlite3": "^5.1.7"
   }
 }
