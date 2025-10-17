@@ -81,52 +81,37 @@ app.post('/auth/register', async (req, res) => {
   const email    = (req.body?.email || '').trim().toLowerCase();
   const password = req.body?.password || '';
 
-  console.log('[REGISTER] payload', { username, emailLen: email.length });
+  console.log('[REGISTER] payload', { username, email });
 
-  if (!username || !email || !password)
-    return res.status(400).json({ ok:false, error:'Faltan campos' });
-  if (username.length < 3 || username.length > 32)
-    return res.status(400).json({ ok:false, error:'Usuario 3-32 chars' });
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
-    return res.status(400).json({ ok:false, error:'Email inválido' });
-  if (password.length < 4 || password.length > 100)
-    return res.status(400).json({ ok:false, error:'Contraseña 4-100 chars' });
+  try {
+    if (!username || !email || !password)
+      return res.status(400).json({ ok:false, error:'Faltan campos' });
 
-  // ¿Existe username o email?
-  const orFilter = `email.eq.${email},nombreusuario.eq.${username}`;
-  const exist = await supabase
-    .from('usuario')
-    .select('id')
-    .or(orFilter)
-    .limit(1)
-    .maybeSingle();
+    // Hash bcrypt
+    const hash = await bcrypt.hash(password, 10);
+    console.log('[REGISTER] bcrypt hash =', hash);
 
-  if (exist.error) {
-    dbErr('register.exist', exist.error);
-    return res.status(500).json({ ok:false, error:'Error del servidor' });
+    // Inserción
+    const { data, error } = await supabase
+      .from('usuario')
+      .insert([{ nombreusuario: username, email, contrasenia: hash }])
+      .select('id,nombreusuario,email')
+      .single();
+
+    if (error) {
+      console.error('[REGISTER] DB insert error', error);
+      return res.status(500).json({ ok:false, error:'DB error' });
+    }
+
+    console.log('[REGISTER] created user id', data.id);
+    res.json({ ok:true, user: safeUserRow(data) });
+
+  } catch (err) {
+    console.error('[REGISTER] Exception', err);
+    res.status(500).json({ ok:false, error:'Server error' });
   }
-  if (exist.data) {
-    console.log('[REGISTER] ya existe', exist.data.id);
-    return res.status(409).json({ ok:false, error:'Usuario o email ya existe' });
-  }
-
-  const hash = await bcrypt.hash(password, 10);
-  console.log('[REGISTER] hash ok');
-
-  const ins = await supabase
-    .from('usuario')
-    .insert([{ nombreusuario: username, email, contrasenia: hash }])
-    .select('id,nombreusuario,email')
-    .single();
-
-  if (ins.error) {
-    dbErr('register.insert', ins.error);
-    return res.status(500).json({ ok:false, error:'Error del servidor' });
-  }
-
-  console.log('[REGISTER] creado id', ins.data.id);
-  return res.json({ ok:true, user: safeUserRow(ins.data) });
 });
+
 
 // ================== LOGIN ==================
 app.post('/auth/login', async (req, res) => {
