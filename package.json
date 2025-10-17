@@ -17,6 +17,13 @@
   },
   "homepage": "https://github.com/Speedy-productions/Server#readme",
   "dependencies": {
-    "express": "^5.1.0"
+    "bcrypt": "^6.0.0",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "jose": "^6.1.0",
+    "mariadb": "^3.4.5",
+    "mysql2": "^3.15.2",
+    "uuid": "^13.0.0"
   }
 }
