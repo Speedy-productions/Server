@@ -1,7 +1,20 @@
-// ###############################################
-// index.js — Auth local (email/pass) + Google OAuth con polling (Postgres)
-// ###############################################
-require('dotenv').config();
+// ###############################################################
+// index.js — API para Render: Postgres (Supabase) + bcrypt + Google OAuth
+// ###############################################################
+// - No .env ni ejecución local.
+// - TLS lo termina Render; aquí va HTTP normal con app.listen(PORT).
+// - Usa process.env.DATABASE_URL (Postgres/Supabase) y RENDER_EXTERNAL_URL.
+// - Para Google OAuth, configura también GOOGLE_CLIENT_ID/SECRET y PUBLIC_BASE_URL
+//   si no quieres depender de RENDER_EXTERNAL_URL.
+//
+// Endpoints:
+//   GET  /health
+//   POST /auth/register      { username, email, password }
+//   POST /auth/login         { emailOrUser, password }
+//   GET  /auth/google/start  (?state=optional)
+//   GET  /auth/google/callback   (redirect URI en Google Console)
+//   GET  /auth/google/tx/:state  -> { status: 'pending'|'ok'|'error', data? }
+// ###############################################################
 
 const express = require('express');
 const cors    = require('cors');
@@ -14,16 +27,24 @@ const app = express();
 app.use(express.json({ limit: '256kb' }));
 app.use(cors({ origin: '*', methods: ['GET','POST'] }));
 
-// ---------- DB (Postgres/Supabase) ----------
+// ---------- DB (Postgres: Supabase/Render) ----------
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false } // necesario con Supabase/Render
+  ssl: { rejectUnauthorized: false } // requerido por Supabase/Render
 });
 
-// ---------- Google OAuth ----------
-const PUBLIC_BASE_URL     = process.env.PUBLIC_BASE_URL; // ej: https://xxx.onrender.com o https://xxx.ngrok-free.app
-const GOOGLE_CLIENT_ID    = process.env.GOOGLE_CLIENT_ID;
-const GOOGLE_CLIENT_SECRET= process.env.GOOGLE_CLIENT_SECRET;
+// ---------- URLs y OAuth ----------
+const PUBLIC_BASE_URL =
+  process.env.PUBLIC_BASE_URL || // (opcional) fuerza una URL pública concreta
+  process.env.RENDER_EXTERNAL_URL; // URL pública que expone Render (https://...onrender.com)
+
+const GOOGLE_CLIENT_ID     = process.env.GOOGLE_CLIENT_ID;
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
+
+if (!process.env.DATABASE_URL) throw new Error('Falta env DATABASE_URL');
+if (!PUBLIC_BASE_URL)          throw new Error('Falta PUBLIC_BASE_URL o RENDER_EXTERNAL_URL');
+if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET)
+  throw new Error('Faltan GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET');
 
 const googleClient = new OAuth2Client({
   clientId: GOOGLE_CLIENT_ID,
@@ -31,8 +52,7 @@ const googleClient = new OAuth2Client({
   redirectUri: `${PUBLIC_BASE_URL}/auth/google/callback`,
 });
 
-// ---------- Polling store (memoria) ----------
-// txStore.set(state, { status: 'pending' | 'ok' | 'error', data?: {...}, error?: '...' })
+// ---------- Polling store (memoria, expira en 5 min) ----------
 const txStore = new Map();
 function putTx(state, val) {
   txStore.set(state, val);
@@ -41,15 +61,13 @@ function putTx(state, val) {
 
 // ---------- Util ----------
 function safeUserRow(u) {
-  // columnas en postgres llegan en minúsculas si no se usan comillas
   return { id: Number(u.id), nombre: u.nombreusuario, email: u.email };
 }
 
 // ---------- Health ----------
-app.get('/health', (_req, res) => res.json({ ok: true, message: 'Server up' }));
+app.get('/health', (_req, res) => res.json({ ok: true, message: 'Server up (Render)' }));
 
 // ================== AUTH: REGISTER ==================
-// Body: { username, email, password }
 app.post('/auth/register', async (req, res) => {
   try {
     const username = (req.body?.username || '').trim();
@@ -65,7 +83,6 @@ app.post('/auth/register', async (req, res) => {
     if (password.length < 4 || password.length > 100)
       return res.status(400).json({ ok:false, error:'Contraseña 4-100 chars' });
 
-    // ¿existe por email o usuario?
     const exist = await pool.query(
       `select id from usuario where email = $1 or nombreusuario = $2 limit 1`,
       [email, username]
@@ -81,15 +98,13 @@ app.post('/auth/register', async (req, res) => {
       [username, email, hash]
     );
 
-    const u = ins.rows[0];
-    return res.json({ ok:true, user: safeUserRow(u) });
+    return res.json({ ok:true, user: safeUserRow(ins.rows[0]) });
   } catch {
     return res.status(500).json({ ok:false, error:'Error del servidor' });
   }
 });
 
-// ================== AUTH: LOGIN (manual) ==================
-// Body: { emailOrUser, password }
+// ================== AUTH: LOGIN ==================
 app.post('/auth/login', async (req, res) => {
   try {
     const emailOrUser = (req.body?.emailOrUser || '').trim().toLowerCase();
@@ -120,7 +135,7 @@ app.post('/auth/login', async (req, res) => {
 
 // ================== GOOGLE: start ==================
 app.get('/auth/google/start', (req, res) => {
-  const state = req.query.state || uuidv4(); // Unity puede generar su propio state
+  const state = req.query.state || uuidv4();
   putTx(state, { status: 'pending' });
 
   const url = googleClient.generateAuthUrl({
@@ -143,18 +158,16 @@ app.get('/auth/google/callback', async (req, res) => {
       idToken: tokens.id_token,
       audience: GOOGLE_CLIENT_ID,
     });
-    const payload = ticket.getPayload(); // sub, email, name...
+    const payload = ticket.getPayload();
     const googleId = payload.sub;
     const email    = (payload.email || '').toLowerCase();
     const nombre   = payload.name || 'Jugador';
 
-    // upsert usuario por googleId/email
     let user;
     const byGoogle = await pool.query(
       `select id, nombreusuario, email from usuario where googleid = $1 limit 1`,
       [googleId]
     );
-
     if (byGoogle.rows.length > 0) {
       user = byGoogle.rows[0];
     } else {
@@ -177,10 +190,7 @@ app.get('/auth/google/callback', async (req, res) => {
       }
     }
 
-    // notificar al polling-map
     putTx(state, { status: 'ok', data: { user: safeUserRow(user) } });
-
-    // página simple de cierre
     res.send(`<html><body><p>Login con Google completado. Volver al juego.</p></body></html>`);
   } catch {
     putTx(state, { status: 'error', error: 'google_oauth_failed' });
@@ -195,8 +205,8 @@ app.get('/auth/google/tx/:state', (req, res) => {
   return res.json(record);
 });
 
-// ---------- Arranque ----------
+// ---------- Arranque (Render asigna PORT) ----------
 const port = Number(process.env.PORT || 3000);
 app.listen(port, () => {
-  console.log(`API escuchando en http://localhost:${port}`);
+  console.log(`API escuchando en :${port} (Render)`);
 });
