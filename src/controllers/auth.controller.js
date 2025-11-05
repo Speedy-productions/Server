@@ -9,6 +9,7 @@ const {
 } = require('../models/user.model');
 const { safeUserRow } = require('../utils/helpers');
 const { generateAuthUrl, verifyGoogleToken } = require('../services/google.service');
+const { signToken } = require('../utils/jwt');
 
 const txStore = new Map();
 function putTx(state, val) {
@@ -25,7 +26,11 @@ exports.register = async (req, res) => {
     const hash = await bcrypt.hash(password, 10);
     const { data, error } = await createUser(username.trim(), email.toLowerCase(), hash);
     if (error) return res.status(500).json({ ok: false, error: 'DB error' });
-    res.json({ ok: true, user: safeUserRow(data) });
+
+    const user = safeUserRow(data);
+    const token = signToken(user);
+
+    res.json({ ok: true, user, token });
   } catch {
     res.status(500).json({ ok: false, error: 'Server error' });
   }
@@ -44,7 +49,10 @@ exports.login = async (req, res) => {
   const match = await bcrypt.compare(password, row.data.contrasenia || '');
   if (!match) return res.status(401).json({ ok: false, error: 'Credenciales inválidas' });
 
-  res.json({ ok: true, user: safeUserRow(row.data) });
+  const user = safeUserRow(row.data);
+  const token = signToken(user);
+
+  res.json({ ok: true, user, token });
 };
 
 exports.googleStart = (req, res) => {
@@ -63,24 +71,27 @@ exports.googleCallback = async (req, res) => {
     const email = (payload.email || '').toLowerCase();
     const nombre = payload.name || 'Jugador';
 
-    // 1) Buscar por googleid
     let user = await findUserByGoogleId(googleId);
     if (user.data) {
-      putTx(state, { status: 'ok', data: { user: safeUserRow(user.data) } });
+      const userData = safeUserRow(user.data);
+      const token = signToken(userData);
+      putTx(state, { status: 'ok', data: { user: userData, token } });
       return res.send('<html><body><p>Login con Google completado.</p></body></html>');
     }
 
-    // 2) Buscar por email
     user = await findUserByEmail(email);
     if (user.data) {
       await linkGoogleId(user.data.id, googleId);
-      putTx(state, { status: 'ok', data: { user: safeUserRow(user.data) } });
+      const userData = safeUserRow(user.data);
+      const token = signToken(userData);
+      putTx(state, { status: 'ok', data: { user: userData, token } });
       return res.send('<html><body><p>Login con Google completado.</p></body></html>');
     }
 
-    // 3) Crear nuevo usuario
     const ins = await createUser(nombre.slice(0, 32), email, '', googleId);
-    putTx(state, { status: 'ok', data: { user: safeUserRow(ins.data) } });
+    const userData = safeUserRow(ins.data);
+    const token = signToken(userData);
+    putTx(state, { status: 'ok', data: { user: userData, token } });
     res.send('<html><body><p>Login con Google completado.</p></body></html>');
   } catch {
     putTx(state, { status: 'error', error: 'google_oauth_failed' });
@@ -92,4 +103,10 @@ exports.googleTx = (req, res) => {
   const rec = txStore.get(req.params.state);
   if (!rec) return res.json({ status: 'pending' });
   return res.json(rec);
+};
+
+// NUEVO ENDPOINT: validar token existente
+exports.validateToken = (req, res) => {
+  const user = req.user;
+  res.json({ ok: true, user });
 };
