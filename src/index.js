@@ -3,6 +3,7 @@ const { PORT } = require('./config/env');
 const express = require('express');
 const cors = require('cors');
 const { logReq } = require('./utils/logger');
+require("dotenv").config();
 
 const app = express();
 app.use(express.json({ limit: '256kb' }));

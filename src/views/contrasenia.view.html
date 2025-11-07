@@ -7,14 +7,28 @@
 </head>
 <body>
   <h2>Recuperar contraseña</h2>
-  <form action="/contrasenia/recuperar" method="post">
-    <label for="firstField">Nueva contraseña:</label><br>
-    <input type="text" id="nuevaContrasenia" name="nuevaContrasenia" placeholder="Introduzca su contraseña"><br><br>
-
-    <label for="secondField">Repetir contraseña:</label><br>
-    <input type="text" id="repetirContrasenia" name="repetirContrasenia" placeholder="Introduzca su contraseña"><br><br>
-
-    <button type="submit">Recuperar contraseña</button>
+  <form id="resetForm">
+    <input type="hidden" id="token" value="{{TOKEN}}" />
+    <input type="password" id="newPassword" placeholder="Nueva contraseña" required />
+    <button type="submit">Cambiar contraseña</button>
   </form>
+
+  <script>
+  const form = document.getElementById('resetForm');
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const token = document.getElementById('token').value;
+    const nuevaContrasenia = document.getElementById('newPassword').value;
+
+    const res = await fetch('/contrasenia/recuperar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, nuevaContrasenia })
+    });
+
+    const data = await res.json();
+    alert(data.message || data.error);
+  });
+</script>
 </body>
 </html>
