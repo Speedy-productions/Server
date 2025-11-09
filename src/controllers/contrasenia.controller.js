@@ -2,7 +2,7 @@ const path = require("path");
 const bcrypt = require("bcrypt");
 const { v4: uuidv4 } = require("uuid");
 const nodemailer = require("nodemailer");
-const { supabase } = require("../config/supabase");
+const supabase = require("../config/supabase");
 const fs = require("fs");
 
 // 📄 1. Mostrar el formulario HTML
@@ -25,11 +25,9 @@ const sendMail = async (req, res) => {
   if (!email) return res.status(400).json({ ok: false, error: "Falta el correo" });
 
   try {
-    /*
-
     // Buscar usuario
     const { data: user, error } = await supabase
-      .from("usuarios")
+      .from("usuario")
       .select("*")
       .eq("email", email.toLowerCase())
       .single();
@@ -43,14 +41,12 @@ const sendMail = async (req, res) => {
 
     // Guardar token y expiración en BD
     await supabase
-      .from("usuarios")
+      .from("usuario")
       .update({
         reset_token: token,
         reset_expiration: expiration
       })
       .eq("id", user.id);
-
-      */
 
     // Enviar correo
     const transporter = nodemailer.createTransport({
@@ -61,13 +57,17 @@ const sendMail = async (req, res) => {
       }
     });
 
-    // const link = `https://serversizzle.onrender.com/contrasenia/restablecer/${token}`;
+    console.log("Generated token:", token);
+    console.log("Expiration:", new Date(expiration));
+    console.log("User ID:", user.id);
+
+    const link = `https://serversizzle.onrender.com/contrasenia/restablecer/${token}`;
 
     const mailOptions = {
       from: process.env.EMAIL_USER,
       to: email,
       subject: "Restablecer contraseña",
-      text: "Aquí iría el link para restablecer la contraseña.",
+      text: `Aquí iría el ${link} para restablecer la contraseña.`,
     };
 
     await transporter.sendMail(mailOptions);
@@ -88,7 +88,7 @@ const recuperar = async (req, res) => {
   try {
     // Buscar usuario por token
     const { data: user, error } = await supabase
-      .from("usuarios")
+      .from("usuario")
       .select("*")
       .eq("reset_token", token)
       .single();
@@ -105,7 +105,7 @@ const recuperar = async (req, res) => {
 
     // Actualizar contraseña y limpiar token
     await supabase
-      .from("usuarios")
+      .from("usuario")
       .update({
         contrasenia: hash,
         reset_token: null,

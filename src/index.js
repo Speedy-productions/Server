@@ -4,6 +4,7 @@ const express = require('express');
 const cors = require('cors');
 const { logReq } = require('./utils/logger');
 require("dotenv").config();
+const { supabase } = require('./config/supabase');
 
 const app = express();
 app.use(express.json({ limit: '256kb' }));
