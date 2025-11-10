@@ -56,7 +56,7 @@ const sendMail = async (req, res) => {
       // Para producción: usa un remitente de TU DOMINIO verificado en Resend, ejemplo:
       // from: "Soporte <no-reply@tudominio.com>",
       // Mientras pruebas puedes usar el sender de onboarding de Resend:
-      from: "Sizzle Mail <no-reply@sizzle-mail.lat>",
+      from: "Soporte Sizzle <no-reply@sizzle-mail.lat>",
       to: email,
       subject: "Restablecer contraseña",
       html: `
