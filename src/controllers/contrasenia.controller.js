@@ -1,11 +1,14 @@
+// controllers/contrasenia.controller.js
 const path = require("path");
 const bcrypt = require("bcrypt");
 const { v4: uuidv4 } = require("uuid");
-const nodemailer = require("nodemailer");
+const { Resend } = require("resend");
 const supabase = require("../config/supabase");
 const fs = require("fs");
 
-// 📄 1. Mostrar el formulario HTML
+const resend = new Resend(process.env.RESEND_API_KEY);
+
+// 📄 1. Mostrar el formulario HTML (igual que ya lo tienes)
 const showForm = (req, res) => {
   const token = req.params.token;
   const filePath = path.join(__dirname, "../views/contrasenia.view.html");
@@ -16,7 +19,7 @@ const showForm = (req, res) => {
   });
 };
 
-// 📨 2. Enviar correo con link de restablecimiento (GMAIL)
+// 📨 2. Enviar correo con link de restablecimiento (Resend)
 const sendMail = async (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ ok: false, error: "Falta el correo" });
@@ -29,34 +32,31 @@ const sendMail = async (req, res) => {
       .eq("email", email.toLowerCase())
       .single();
 
-    if (error || !user)
+    if (error || !user) {
       return res.status(404).json({ ok: false, error: "Usuario no encontrado" });
+    }
 
-    // Generar token y expiración
+    // Generar token y expiración (15 min)
     const token = uuidv4();
-    const expiration = Date.now() + 15 * 60 * 1000; // 15 minutos
+    const expiration = Date.now() + 15 * 60 * 1000;
 
     await supabase
       .from("usuario")
       .update({
         reset_token: token,
-        reset_expiration: expiration,
+        reset_expiration: expiration
       })
       .eq("id", user.id);
 
-    // Configurar transporter Gmail
-    const transporter = nodemailer.createTransport({
-      service: "gmail",
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS, // App password, NO tu contraseña normal
-      },
-    });
-
+    // Construir link al formulario
     const link = `https://serversizzle.onrender.com/contrasenia/restablecer/${token}`;
 
-    const mailOptions = {
-      from: `"Soporte Sizzle" <${process.env.EMAIL_USER}>`,
+    // Enviar con Resend
+    const { data, error: sendError } = await resend.emails.send({
+      // Para producción: usa un remitente de TU DOMINIO verificado en Resend, ejemplo:
+      // from: "Soporte <no-reply@tudominio.com>",
+      // Mientras pruebas puedes usar el sender de onboarding de Resend:
+      from: "Sizzle Mail <no-reply@sizzle-mail.lat>",
       to: email,
       subject: "Restablecer contraseña",
       html: `
@@ -66,24 +66,28 @@ const sendMail = async (req, res) => {
           <p><a href="${link}" style="display:inline-block;padding:10px 16px;border-radius:8px;background:#0ea5e9;color:white;text-decoration:none">Restablecer contraseña</a></p>
           <p>Si no solicitaste esto, ignora este correo.</p>
         </div>`,
-      text: `Usa este enlace para restablecer tu contraseña (expira en 15 minutos): ${link}`,
-    };
+      text: `Usa este enlace para restablecer tu contraseña (expira en 15 minutos): ${link}`
+    });
 
-    // Enviar correo
-    await transporter.sendMail(mailOptions);
+    if (sendError) {
+      console.error("❌ Resend error:", sendError);
+      return res.status(500).json({ ok: false, error: "No se pudo enviar el correo" });
+    }
 
-    console.log("✅ Correo enviado a:", email);
+    // Logs útiles (no sensibles)
     console.log("Generated token:", token);
     console.log("Expiration:", new Date(expiration));
+    console.log("User ID:", user.id);
+    console.log("Resend message id:", data?.id);
 
-    return res.json({ ok: true, message: "Correo enviado correctamente" });
+    return res.json({ ok: true, message: "Correo enviado" });
   } catch (err) {
     console.error("❌ Error al enviar el correo:", err);
     return res.status(500).json({ ok: false, error: "Error al enviar el correo" });
   }
 };
 
-// 🔄 3. Restablecer la contraseña
+// 🔄 3. Restablecer la contraseña (igual que ya lo tienes)
 const recuperar = async (req, res) => {
   const { token, nuevaContrasenia } = req.body;
   if (!token || !nuevaContrasenia)
@@ -109,7 +113,7 @@ const recuperar = async (req, res) => {
       .update({
         contrasenia: hash,
         reset_token: null,
-        reset_expiration: null,
+        reset_expiration: null
       })
       .eq("id", user.id);
 
