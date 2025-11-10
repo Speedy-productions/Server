@@ -50,12 +50,14 @@ const sendMail = async (req, res) => {
 
     // Enviar correo
     const transporter = nodemailer.createTransport({
-      service: "gmail",
+      host: "smtp.gmail.com",
+      port: 465,
+      secure: true, // true para 465, false para 587
       auth: {
         user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS
-      }
-    });
+        pass: process.env.EMAIL_PASS,
+      },
+});
 
     console.log("Generated token:", token);
     console.log("Expiration:", new Date(expiration));
