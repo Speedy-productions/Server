@@ -1,25 +1,25 @@
+// controllers/contrasenia.controller.js
 const path = require("path");
 const bcrypt = require("bcrypt");
 const { v4: uuidv4 } = require("uuid");
-const nodemailer = require("nodemailer");
+const { Resend } = require("resend");
 const supabase = require("../config/supabase");
 const fs = require("fs");
 
-// 📄 1. Mostrar el formulario HTML
+const resend = new Resend(process.env.RESEND_API_KEY);
+
+// 📄 1. Mostrar el formulario HTML (igual que ya lo tienes)
 const showForm = (req, res) => {
   const token = req.params.token;
   const filePath = path.join(__dirname, "../views/contrasenia.view.html");
-
   fs.readFile(filePath, "utf8", (err, data) => {
     if (err) return res.status(500).send("Error al cargar el formulario");
-
-    // Inyecta el token en el HTML (puede ser un <input hidden> o un script)
     const html = data.replace("{{TOKEN}}", token);
     res.send(html);
   });
 };
 
-// 📨 2. Enviar correo con link de restablecimiento
+// 📨 2. Enviar correo con link de restablecimiento (Resend)
 const sendMail = async (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ ok: false, error: "Falta el correo" });
@@ -32,14 +32,14 @@ const sendMail = async (req, res) => {
       .eq("email", email.toLowerCase())
       .single();
 
-    if (error || !user)
+    if (error || !user) {
       return res.status(404).json({ ok: false, error: "Usuario no encontrado" });
+    }
 
-    // Generar token y expiración
+    // Generar token y expiración (15 min)
     const token = uuidv4();
-    const expiration = Date.now() + 15 * 60 * 1000; // 15 minutos
+    const expiration = Date.now() + 15 * 60 * 1000;
 
-    // Guardar token y expiración en BD
     await supabase
       .from("usuario")
       .update({
@@ -48,47 +48,52 @@ const sendMail = async (req, res) => {
       })
       .eq("id", user.id);
 
-    // Enviar correo
-    const transporter = nodemailer.createTransport({
-      host: "smtp.gmail.com",
-      port: 465,
-      secure: true, // true para 465, false para 587
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
-      },
-});
+    // Construir link al formulario
+    const link = `https://serversizzle.onrender.com/contrasenia/restablecer/${token}`;
 
+    // Enviar con Resend
+    const { data, error: sendError } = await resend.emails.send({
+      // Para producción: usa un remitente de TU DOMINIO verificado en Resend, ejemplo:
+      // from: "Soporte <no-reply@tudominio.com>",
+      // Mientras pruebas puedes usar el sender de onboarding de Resend:
+      from: "onboarding@resend.dev",
+      to: email,
+      subject: "Restablecer contraseña",
+      html: `
+        <div style="font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;">
+          <h2>Restablecer tu contraseña</h2>
+          <p>Recibimos una solicitud para restablecer tu contraseña. Este enlace expira en <strong>15 minutos</strong>.</p>
+          <p><a href="${link}" style="display:inline-block;padding:10px 16px;border-radius:8px;background:#0ea5e9;color:white;text-decoration:none">Restablecer contraseña</a></p>
+          <p>Si no solicitaste esto, ignora este correo.</p>
+        </div>`,
+      text: `Usa este enlace para restablecer tu contraseña (expira en 15 minutos): ${link}`
+    });
+
+    if (sendError) {
+      console.error("❌ Resend error:", sendError);
+      return res.status(500).json({ ok: false, error: "No se pudo enviar el correo" });
+    }
+
+    // Logs útiles (no sensibles)
     console.log("Generated token:", token);
     console.log("Expiration:", new Date(expiration));
     console.log("User ID:", user.id);
+    console.log("Resend message id:", data?.id);
 
-    const link = `https://serversizzle.onrender.com/contrasenia/restablecer/${token}`;
-
-    const mailOptions = {
-      from: process.env.EMAIL_USER,
-      to: email,
-      subject: "Restablecer contraseña",
-      text: `Aquí iría el ${link} para restablecer la contraseña.`,
-    };
-
-    await transporter.sendMail(mailOptions);
-    res.json({ ok: true, message: "Correo enviado" });
-
+    return res.json({ ok: true, message: "Correo enviado" });
   } catch (err) {
     console.error("❌ Error al enviar el correo:", err);
-    res.status(500).json({ ok: false, error: "Error al enviar el correo" });
+    return res.status(500).json({ ok: false, error: "Error al enviar el correo" });
   }
 };
 
-// 🔄 3. Restablecer la contraseña usando el token
+// 🔄 3. Restablecer la contraseña (igual que ya lo tienes)
 const recuperar = async (req, res) => {
   const { token, nuevaContrasenia } = req.body;
   if (!token || !nuevaContrasenia)
     return res.status(400).json({ ok: false, error: "Faltan datos" });
 
   try {
-    // Buscar usuario por token
     const { data: user, error } = await supabase
       .from("usuario")
       .select("*")
@@ -98,14 +103,11 @@ const recuperar = async (req, res) => {
     if (error || !user)
       return res.status(400).json({ ok: false, error: "Token inválido" });
 
-    // Validar expiración
     if (Date.now() > user.reset_expiration)
       return res.status(400).json({ ok: false, error: "El token ha expirado" });
 
-    // Hashear nueva contraseña
     const hash = await bcrypt.hash(nuevaContrasenia, 10);
 
-    // Actualizar contraseña y limpiar token
     await supabase
       .from("usuario")
       .update({
