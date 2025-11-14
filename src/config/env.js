@@ -8,7 +8,8 @@ const {
   PUBLIC_BASE_URL,
   JWT_SECRET, 
   JWT_EXPIRES_IN,
-  PORT
+  PORT,
+  RESEND_API_KEY
 
 } = process.env;
 
@@ -26,5 +27,6 @@ module.exports = {
   PUBLIC_BASE_URL,
   JWT_SECRET,
   JWT_EXPIRES_IN: JWT_EXPIRES_IN || '30d',
-  PORT: PORT || 3000
+  PORT: PORT || 3000,
+  RESEND_API_KEY
 };
