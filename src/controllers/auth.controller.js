@@ -17,25 +17,6 @@ function putTx(state, val) {
   setTimeout(() => txStore.delete(state), 5 * 60 * 1000);
 }
 
-exports.register = async (req, res) => {
-  const { username = '', email = '', password = '' } = req.body;
-  if (!username.trim() || !email.trim() || !password)
-    return res.status(400).json({ ok: false, error: 'Faltan campos' });
-
-  try {
-    const hash = await bcrypt.hash(password, 10);
-    const { data, error } = await createUser(username.trim(), email.toLowerCase(), hash);
-    if (error) return res.status(500).json({ ok: false, error: 'DB error' });
-
-    const user = safeUserRow(data);
-    const token = signToken(user);
-
-    res.json({ ok: true, user, token });
-  } catch {
-    res.status(500).json({ ok: false, error: 'Server error' });
-  }
-};
-
 exports.login = async (req, res) => {
   const emailOrUser = (req.body?.emailOrUser || '').trim().toLowerCase();
   const password = req.body?.password || '';
