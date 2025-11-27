@@ -15,10 +15,12 @@ app.use((req, res, next) => { logReq(req); next(); });
 const authRoutes = require('./routes/auth.route');
 const contraseniaRoutes = require('./routes/contrasenia.route');
 const userRoutes = require('./routes/user.route');
+const progresoRoutes = require('./routes/progreso.route');
 
 app.use('/auth', authRoutes);
 app.use('/contrasenia', contraseniaRoutes);
-app.use('/user', userRoutes)
+app.use('/user', userRoutes);
+app.use('/progreso', progresoRoutes)
 
 // Health check
 app.get('/health', (_req, res) => res.json({ ok: true, message: 'Server up (Supabase)' }));
